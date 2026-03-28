@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI数字人对话系统</title>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+
+        body {
+            background: #f5f5f5;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            display: flex;
+            gap: 30px;
+        }
+
+        /* 左侧：视频播放区 */
+        .left-box {
+            width: 480px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .media-box {
+            width: 480px;
+            height: 640px;
+            background: #000;
+            border-radius: 12px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #avatar-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+            font-size: 14px;
+        }
+
+        #video-player {
+            width: 100%;
+            height: 100%;
+            display: none;
+            object-fit: contain;
+        }
+
+        .control-btn-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            flex: 1;
+            height: 45px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 15px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .play-btn { background: #2196f3; }
+        .reset-btn { background: #ff9800; }
+        .btn:disabled { background: #90caf9; cursor: not-allowed; }
+
+        .status-tip {
+            text-align: center;
+            color: #2196f3;
+            font-size: 14px;
+        }
+
+        /* 右侧：聊天区 */
+        .right-box {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .title {
+            text-align: center;
+            font-size: 22px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .chat-box {
+            flex: 1;
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-height: 500px;
+        }
+
+        .message {
+            max-width: 75%;
+            padding: 10px 15px;
+            border-radius: 18px;
+            line-height: 1.5;
+        }
+
+        .user {
+            align-self: flex-end;
+            background: #2196f3;
+            color: white;
+            border-bottom-right-radius: 5px;
+        }
+
+        .ai {
+            align-self: flex-start;
+            background: #e0e0e0;
+            border-bottom-left-radius: 5px;
+        }
+
+        #input-box {
+            height: 100px;
+            padding: 15px;
+            border-radius: 12px;
+            border: 1px solid #ddd;
+            resize: none;
+            font-size: 14px;
+            outline: none;
+        }
+
+        #send-btn {
+            height: 50px;
+            border: none;
+            border-radius: 12px;
+            background: #2196f3;
+            color: white;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        #send-btn:hover { background: #1976d2; }
+        #send-btn:disabled { background: #90caf9; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <!-- 左侧：视频播放区 -->
+    <div class="left-box">
+        <div class="media-box">
+            <div id="avatar-placeholder">🎭 数字人播放区<br>发送消息后自动生成视频</div>
+            <video id="video-player" controls></video>
+        </div>
+        <div class="control-btn-group">
+            <button class="btn play-btn" id="play-btn" disabled>▶️ 播放</button>
+            <button class="btn reset-btn" id="reset-btn" disabled>🔄 显示占位图</button>
+        </div>
+        <div class="status-tip" id="status">✅ 服务就绪，输入消息开始对话</div>
+    </div>
+
+    <!-- 右侧：聊天区 -->
+    <div class="right-box">
+        <div class="title">🎯 AI对话 → 自动生成数字人对口型视频</div>
+        <div class="chat-box" id="chat-list"></div>
+        <textarea id="input-box" placeholder="输入你想说的话，按回车发送..."></textarea>
+        <button id="send-btn">🚀 发送并生成数字人视频</button>
+    </div>
+</div>
+
+<script>
+    // DOM元素
+    const chatList = document.getElementById("chat-list");
+    const inputBox = document.getElementById("input-box");
+    const sendBtn = document.getElementById("send-btn");
+    const statusText = document.getElementById("status");
+    const videoPlayer = document.getElementById("video-player");
+    const avatarPlaceholder = document.getElementById("avatar-placeholder");
+    const playBtn = document.getElementById("play-btn");
+    const resetBtn = document.getElementById("reset-btn");
+
+    // 当前视频地址
+    let currentVideoUrl = "";
+
+    // 追加聊天消息
+    function addMessage(role, text) {
+        const div = document.createElement("div");
+        div.className = `message ${role}`;
+        div.innerText = role === "user" ? `我：${text}` : `AI：${text}`;
+        chatList.appendChild(div);
+        chatList.scrollTop = chatList.scrollHeight;
+    }
+
+    // 更新状态
+    function setStatus(text) {
+        statusText.innerText = text;
+    }
+
+    // 核心发送消息函数
+    async function sendMessage() {
+        const message = inputBox.value.trim();
+        if (!message) {
+            alert("请输入内容！");
+            return;
+        }
+
+        // 清空输入框，禁用按钮
+        inputBox.value = "";
+        sendBtn.disabled = true;
+        addMessage("user", message);
+        setStatus("🔄 正在获取AI回答...");
+
+        try {
+            // 发送请求到后端（你的电脑服务器）
+            const response = await axios({
+                method: "POST",
+                url: "/AI",
+                data: { message: message }
+            });
+
+            const result = response.data;
+            if (result.code !== 200) {
+                throw new Error(result.msg);
+            }
+
+            // 追加AI回复
+            addMessage("ai", result.aiReply);
+            setStatus("✅ 视频生成完成！正在播放...");
+
+            // 加载并播放视频
+            currentVideoUrl = result.videoUrl;
+            avatarPlaceholder.style.display = "none";
+            videoPlayer.style.display = "block";
+            videoPlayer.src = currentVideoUrl;
+            videoPlayer.play();
+
+            // 启用按钮
+            playBtn.disabled = false;
+            resetBtn.disabled = false;
+
+        } catch (error) {
+            console.error("请求失败：", error);
+            const errMsg = error?.response?.data?.msg || error.message || "服务器异常";
+            alert("操作失败：" + errMsg);
+            setStatus("❌ 请求失败");
+        } finally {
+            sendBtn.disabled = false;
+        }
+    }
+
+    // 播放/暂停
+    playBtn.onclick = () => {
+        if (videoPlayer.paused) {
+            videoPlayer.play();
+            playBtn.innerText = "⏸️ 暂停";
+        } else {
+            videoPlayer.pause();
+            playBtn.innerText = "▶️ 播放";
+        }
+    };
+
+    // 重置显示占位图
+    resetBtn.onclick = () => {
+        videoPlayer.pause();
+        videoPlayer.src = "";
+        videoPlayer.style.display = "none";
+        avatarPlaceholder.style.display = "flex";
+        playBtn.disabled = true;
+        resetBtn.disabled = true;
+    };
+
+    // 绑定事件
+    sendBtn.onclick = sendMessage;
+    inputBox.onkeydown = (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+
+    // 视频播放状态更新
+    videoPlayer.onplay = () => playBtn.innerText = "⏸️ 暂停";
+    videoPlayer.onpause = () => playBtn.innerText = "▶️ 播放";
+</script>
+</body>
+</html>
